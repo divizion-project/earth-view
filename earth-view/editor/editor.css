@@ -25,6 +25,7 @@ body {
   position: relative;
   background: radial-gradient(circle at 25% 25%, rgba(23, 41, 94, 0.7), #030610 70%);
   overflow: hidden;
+  min-height: 100vh;
 }
 
 #viewport canvas {
@@ -90,6 +91,11 @@ input[type='text'] {
 
 input::placeholder {
   color: rgba(255, 255, 255, 0.4);
+}
+
+input.error {
+  border-color: rgba(255, 99, 132, 0.8);
+  color: #ff628a;
 }
 
 button {
@@ -172,5 +178,9 @@ code {
   .panel {
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  #viewport {
+    min-height: 60vh;
   }
 }

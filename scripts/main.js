@@ -1,13 +1,13 @@
 import * as THREE from 'https://unpkg.com/three@0.161.0/build/three.module.js';
 import { extractDescriptorFromPath, parseCameraDescriptor } from './camera.js';
+import { createStarfieldTexture } from './starfield.js';
 
 const TEXTURES = {
   earthDay: 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
   earthSpecular: 'https://threejs.org/examples/textures/planets/earth_specular_2048.jpg',
   earthNormal: 'https://threejs.org/examples/textures/planets/earth_normal_2048.jpg',
   earthNight: 'https://threejs.org/examples/textures/planets/earth_lights_2048.png',
-  clouds: 'https://threejs.org/examples/textures/planets/earth_clouds_1024.png',
-  starfield: 'https://threejs.org/examples/textures/planets/starfield.jpg'
+  clouds: 'https://threejs.org/examples/textures/planets/earth_clouds_1024.png'
 };
 
 const EARTH_RADIUS = 1;
@@ -176,6 +176,7 @@ async function placeUserMarker() {
 
 async function init() {
   await loadAllTextures();
+  textures.starfield = createStarfieldTexture(THREE);
   buildEarth();
   const descriptor = extractDescriptorFromPath(window.location.pathname, document.documentElement.dataset.siteBase);
   const parsed = parseCameraDescriptor(descriptor);
