@@ -27,6 +27,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Fix Cesium paths
+        run: |
+          if [ -d "dist/divizion-launcher-earth-view/cesium" ]; then
+            mv dist/divizion-launcher-earth-view/cesium dist/cesium
+            rm -rf dist/divizion-launcher-earth-view
+          fi
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
