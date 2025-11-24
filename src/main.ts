@@ -107,22 +107,57 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
   navigationInstructionsInitiallyVisible: false,
   skyAtmosphere: new Cesium.SkyAtmosphere(),
   globe: new Cesium.Globe(Cesium.Ellipsoid.WGS84),
-  // skyBox: new Cesium.SkyBox({ ... }) // Using default skybox
 });
 
-// Remove credit if possible or style it minimally (Cesium requires attribution usually, but we can hide it for "no UI" request if user insists, though it's against terms. I'll leave it but maybe make it subtle. Actually, user said "no interface", I will hide the credit container via CSS or JS to strictly follow user request, but standard practice is to keep it. I'll hide it.)
+// Remove credit
 (viewer.cesiumWidget.creditContainer as HTMLElement).style.display = 'none';
 
-// Enable lighting
+// Enable lighting and smoother atmosphere
 viewer.scene.globe.enableLighting = true;
+viewer.scene.globe.atmosphereBrightnessShift = 0.0; // Reset to natural
+viewer.scene.skyAtmosphere.saturationShift = 0.0;
+viewer.scene.skyAtmosphere.brightnessShift = 0.0;
+viewer.scene.fog.enabled = true;
+viewer.scene.fog.density = 0.0001; // Lighter fog
+viewer.scene.globe.showGroundAtmosphere = true;
+
+// Add 3D Buildings (Google Photorealistic 3D Tiles)
+let googleTileset: Cesium.Cesium3DTileset | null = null;
+try {
+  Cesium.createGooglePhotorealistic3DTileset({
+    onlyUsingWithGoogleGeocoder: true // Suppress warning as we're not using geocoding
+  }).then(tileset => {
+    googleTileset = tileset;
+    viewer.scene.primitives.add(tileset);
+    tileset.show = false; // Hide initially to see Globe's night lights from space
+  });
+} catch (e) {
+  console.warn("Google Photorealistic 3D Tiles not supported or failed, falling back to OSM", e);
+  Cesium.createOsmBuildingsAsync().then(buildings => {
+    viewer.scene.primitives.add(buildings);
+  });
+}
+
+// Ensure time is set to now for correct day/night lighting
+viewer.clock.currentTime = Cesium.JulianDate.now();
 
 // High quality settings
 viewer.scene.highDynamicRange = true;
 viewer.scene.postProcessStages.fxaa.enabled = true;
 
+// --- Visual Enhancements ---
+
+// 1. Darken Base Layer for better contrast and night feel
+const baseLayer = viewer.imageryLayers.get(0);
+if (baseLayer) {
+  baseLayer.brightness = 0.6; // Darker ground
+}
+
+// Cloud system removed
+
 // Initial Camera Position (Very far)
 viewer.camera.setView({
-  destination: Cesium.Cartesian3.fromDegrees(0, 0, 200000000), // 200,000 km
+  destination: Cesium.Cartesian3.fromDegrees(0, 0, 1000000000), // 1,000,000 km start
 });
 
 
@@ -134,50 +169,152 @@ async function startSequence() {
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(0, 20, 20000000), // 20,000 km
     duration: 5,
-    easingFunction: Cesium.EasingFunction.QUINTIC_OUT
+    easingFunction: Cesium.EasingFunction.QUINTIC_OUT,
+    complete: () => {
+      // 2. Start Rotation immediately after arrival
+      startRotation();
+    }
   });
 
   // Fade out warp at 4s
   setTimeout(() => {
     warpOverlay.style.opacity = '0';
-  }, 3000); // Start fading a bit earlier to be clear by 5s
+  }, 3000);
 
   setTimeout(() => {
     cancelAnimationFrame(warpId);
     warpOverlay.style.display = 'none';
   }, 5000);
+}
 
-  // 2. Rotation (5s - 10s)
-  // Wait for arrival to finish (5s)
-  setTimeout(() => {
-    // Start gentle rotation
-    const rotationDuration = 5000; // 5s
-    const startTime = Date.now();
+let rotationListener: (() => void) | null = null;
+let scanPhaseActive = false;
 
-    const rotate = () => {
-      const now = Date.now();
-      const dt = now - startTime;
-      if (dt >= rotationDuration) return;
+function startRotation() {
+  const baseRotationRate = 0.0005; // Base rotation speed
+  let currentRotationRate = baseRotationRate;
+  let userLocation: Location | null = null;
 
-      viewer.camera.rotate(Cesium.Cartesian3.UNIT_Z, 0.001); // Small rotation speed
-      requestAnimationFrame(rotate);
-    };
-    rotate();
+  // Fetch user location
+  fetchUserLocation().then(location => {
+    userLocation = location || { lat: 48.8566, lon: 2.3522 }; // Paris fallback
 
-    // Fetch IP during this time
-    fetchUserLocation().then(location => {
-      // 3. Zoom to Location (10s+)
+    // Wait 5 seconds, then start the scan phase
+    setTimeout(() => {
+      startScanPhase(userLocation!);
+    }, 5000);
+  });
+
+  const onTick = () => {
+    viewer.camera.rotate(Cesium.Cartesian3.UNIT_Z, currentRotationRate);
+  };
+
+  viewer.clock.onTick.addEventListener(onTick);
+  rotationListener = () => viewer.clock.onTick.removeEventListener(onTick);
+
+  // Function to update rotation speed smoothly
+  (window as any).updateRotationRate = (newRate: number) => {
+    currentRotationRate = newRate;
+  };
+}
+
+function startScanPhase(location: Location) {
+  scanPhaseActive = true;
+
+  // Acceleration phase: speed up rotation and sun
+  const accelerationDuration = 1500; // 1.5 seconds to accelerate (faster)
+  const scanDuration = 4000; // 4 seconds of fast scanning (longer for effect)
+  const startTime = Date.now();
+  const baseRotationRate = 0.0005;
+  const maxRotationRate = 0.015; // Much faster camera rotation during scan
+
+  // Save original clock multiplier
+  const originalClockMultiplier = viewer.clock.multiplier;
+
+  // Acceleration interval
+  const accelerationInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(elapsed / accelerationDuration, 1);
+
+    // Smoother acceleration using quintic easing for more natural feel
+    const easedProgress = progress < 0.5
+      ? 16 * progress * progress * progress * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 5) / 2;
+
+    const newRotationRate = baseRotationRate + (maxRotationRate - baseRotationRate) * easedProgress;
+
+    // Update rotation rate
+    if ((window as any).updateRotationRate) {
+      (window as any).updateRotationRate(newRotationRate);
+    }
+
+    // Accelerate sun (time) for scanning effect
+    // Speed up time to make sun spin MUCH faster than camera (at least 50x faster)
+    // Camera max is ~0.015, so sun should be spinning VERY fast
+    const maxTimeMultiplier = 150000; // 150000x faster time = sun spinning 50x faster than camera rotation
+    viewer.clock.multiplier = originalClockMultiplier + maxTimeMultiplier * easedProgress;
+
+    if (progress >= 1) {
+      clearInterval(accelerationInterval);
+
+      // Maintain fast speed for scan duration
       setTimeout(() => {
-        if (location) {
-          zoomToLocation(location);
-        } else {
-          // Fallback if IP fails
-          zoomToLocation({ lat: 48.8566, lon: 2.3522 }); // Paris
-        }
-      }, 5000); // 5s after rotation starts (Total 10s)
-    });
+        startZoomAndSlowdown(location, maxRotationRate, originalClockMultiplier);
+      }, scanDuration);
+    }
+  }, 16); // ~60fps
+}
 
-  }, 5000);
+function startZoomAndSlowdown(location: Location, currentRotationRate: number, originalClockMultiplier: number) {
+  const slowdownDuration = 5000; // 5 seconds for smoother slowdown
+  const startTime = Date.now();
+
+  // Get current camera orientation to continue from current position
+  const currentHeading = viewer.camera.heading;
+
+  // Start zoom animation - this will make a full orbit to maintain continuity
+  zoomToLocation(location, currentHeading);
+
+  // Smooth slowdown interval
+  const slowdownInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(elapsed / slowdownDuration, 1);
+
+    // Smoother deceleration using quintic easing for very natural slowdown
+    const easedProgress = progress < 0.5
+      ? 16 * progress * progress * progress * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 5) / 2;
+
+    const newRotationRate = currentRotationRate * (1 - easedProgress);
+
+    // Update rotation rate
+    if ((window as any).updateRotationRate) {
+      (window as any).updateRotationRate(newRotationRate);
+    }
+
+    // Slow down time back to normal with smoother transition, positioning sun correctly
+    // Use a different easing for time to make sun movement feel more natural
+    const timeEasedProgress = 1 - Math.pow(1 - progress, 4); // Quartic easing for time
+    const currentMultiplier = viewer.clock.multiplier;
+    const targetMultiplier = 1; // Real-time
+    viewer.clock.multiplier = currentMultiplier - (currentMultiplier - targetMultiplier) * timeEasedProgress;
+
+    // At the end, set to real-time
+    if (progress >= 1) {
+      clearInterval(slowdownInterval);
+      viewer.clock.multiplier = 1; // Real-time
+
+      // Stop rotation completely
+      if (rotationListener) {
+        rotationListener();
+        rotationListener = null;
+      }
+
+      // Reset time to now for correct sun position
+      viewer.clock.currentTime = Cesium.JulianDate.now();
+      scanPhaseActive = false;
+    }
+  }, 16); // ~60fps
 }
 
 interface Location {
@@ -199,20 +336,57 @@ async function fetchUserLocation(): Promise<Location | null> {
   }
 }
 
-function zoomToLocation(loc: Location) {
-  // Stop any rotation (handled by not calling requestAnimationFrame anymore)
+function zoomToLocation(loc: Location, heading?: number) {
+  // Don't stop rotation here - it will be stopped by the slowdown function
+  // The rotation will smoothly decrease to zero during the zoom
 
-  // Fly to location
-  // "Plunging view" -> Pitch -90
-  viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(loc.lon, loc.lat, 5000), // 5km height
-    orientation: {
-      heading: Cesium.Math.toRadians(0.0),
-      pitch: Cesium.Math.toRadians(-90.0),
-      roll: 0.0
+  // Monitor camera height to show 3D tiles only when close enough (1,000,000m)
+  // This preserves the "Black Marble" night lights from space
+  const tileActivationHeight = 100000;
+  const checkHeight = () => {
+    // Ensure we are using the latest height
+    const height = viewer.camera.positionCartographic.height;
+    if (height < tileActivationHeight) {
+      if (googleTileset) {
+        googleTileset.show = true;
+      }
+      viewer.clock.onTick.removeEventListener(checkHeight);
+    }
+  };
+  viewer.clock.onTick.addEventListener(checkHeight);
+
+  // Simplified location marker - single pulse point fixed to ground
+  const locationEntity = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(loc.lon, loc.lat, 0),
+    point: {
+      pixelSize: 12,
+      color: Cesium.Color.fromCssColorString('#007AFF'),
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 3,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // Fixed to ground inclination
+      disableDepthTestDistance: Number.POSITIVE_INFINITY
     },
-    duration: 5, // Smooth slow zoom
-    easingFunction: Cesium.EasingFunction.QUARTIC_IN_OUT
+    // Add a subtle pulsing animation
+    ellipse: {
+      semiMinorAxis: 50,
+      semiMajorAxis: 50,
+      material: Cesium.Color.fromCssColorString('#007AFF').withAlpha(0.2),
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // Also fixed to ground
+      outline: false
+    }
+  });
+
+  // Use provided heading or default to 0, maintain smooth transition
+  const finalHeading = heading !== undefined ? heading : 0.0;
+
+  // Fly to Entity with HeadingPitchRange - using current heading for smooth transition
+  viewer.flyTo(locationEntity, {
+    duration: 5,
+    offset: new Cesium.HeadingPitchRange(
+      finalHeading, // Use current heading for continuous rotation
+      Cesium.Math.toRadians(-30.0),
+      10000000 // 50000km range (kept user's edit)
+    )
   });
 }
 
