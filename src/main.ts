@@ -115,8 +115,10 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
 // Enable lighting and smoother atmosphere
 viewer.scene.globe.enableLighting = true;
 viewer.scene.globe.atmosphereBrightnessShift = 0.0; // Reset to natural
-viewer.scene.skyAtmosphere.saturationShift = 0.0;
-viewer.scene.skyAtmosphere.brightnessShift = 0.0;
+if (viewer.scene.skyAtmosphere) {
+  viewer.scene.skyAtmosphere.saturationShift = 0.0;
+  viewer.scene.skyAtmosphere.brightnessShift = 0.0;
+}
 viewer.scene.fog.enabled = true;
 viewer.scene.fog.density = 0.0001; // Lighter fog
 viewer.scene.globe.showGroundAtmosphere = true;
@@ -188,7 +190,6 @@ async function startSequence() {
 }
 
 let rotationListener: (() => void) | null = null;
-let scanPhaseActive = false;
 
 function startRotation() {
   const baseRotationRate = 0.0005; // Base rotation speed
@@ -219,8 +220,6 @@ function startRotation() {
 }
 
 function startScanPhase(location: Location) {
-  scanPhaseActive = true;
-
   // Acceleration phase: speed up rotation and sun
   const accelerationDuration = 1500; // 1.5 seconds to accelerate (faster)
   const scanDuration = 4000; // 4 seconds of fast scanning (longer for effect)
@@ -259,13 +258,13 @@ function startScanPhase(location: Location) {
 
       // Maintain fast speed for scan duration
       setTimeout(() => {
-        startZoomAndSlowdown(location, maxRotationRate, originalClockMultiplier);
+        startZoomAndSlowdown(location, maxRotationRate);
       }, scanDuration);
     }
   }, 16); // ~60fps
 }
 
-function startZoomAndSlowdown(location: Location, currentRotationRate: number, originalClockMultiplier: number) {
+function startZoomAndSlowdown(location: Location, currentRotationRate: number) {
   const slowdownDuration = 5000; // 5 seconds for smoother slowdown
   const startTime = Date.now();
 
@@ -312,7 +311,6 @@ function startZoomAndSlowdown(location: Location, currentRotationRate: number, o
 
       // Reset time to now for correct sun position
       viewer.clock.currentTime = Cesium.JulianDate.now();
-      scanPhaseActive = false;
     }
   }, 16); // ~60fps
 }
