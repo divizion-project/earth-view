@@ -25,16 +25,48 @@ const state = {
     earthRadius: 5
 };
 
-const textureLoader = new THREE.TextureLoader();
+// --- Loading Manager ---
+const loadingManager = new THREE.LoadingManager();
+const loadingScreen = document.getElementById('loading');
+
+loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+    if (loadingScreen) {
+        loadingScreen.innerText = `Initializing System... ${Math.round((itemsLoaded / itemsTotal) * 100)}%`;
+    }
+    console.log(`Loading file: ${url}.\nLoaded ${itemsLoaded} of ${itemsTotal} files.`);
+};
+
+loadingManager.onError = (url) => {
+    console.error('There was an error loading ' + url);
+    if (loadingScreen) {
+        loadingScreen.innerText = `Error loading resources. Check console.`;
+        loadingScreen.style.color = 'red';
+    }
+};
+
+// We will start the sequence only when everything is loaded
+loadingManager.onLoad = () => {
+    console.log('Loading complete!');
+    if (loadingScreen) {
+        loadingScreen.style.opacity = 0;
+        setTimeout(() => loadingScreen.remove(), 1000);
+    }
+    startSequence();
+};
+
+
+const textureLoader = new THREE.TextureLoader(loadingManager);
+textureLoader.setCrossOrigin('anonymous');
 
 const earthGroup = new THREE.Group();
 scene.add(earthGroup);
 
-// Load textures with crossOrigin set (though redundant if loader handles it, good practice)
-textureLoader.setCrossOrigin('anonymous');
+// Load textures
 const dayTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg');
 const nightTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_lights_2048.png');
 const bumpTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_normal_2048.jpg');
+const cloudTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png');
+
 
 const earthGeometry = new THREE.SphereGeometry(state.earthRadius, 64, 64);
 const earthMaterial = createEarthMaterial(dayTexture, nightTexture);
@@ -47,7 +79,7 @@ earthGroup.add(earthMesh);
 // Cloud Mesh
 const cloudGeometry = new THREE.SphereGeometry(state.earthRadius * 1.01, 64, 64);
 const cloudMaterial = new THREE.MeshStandardMaterial({
-    map: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png'),
+    map: cloudTexture,
     transparent: true,
     opacity: 0.8,
     blending: THREE.AdditiveBlending,
@@ -97,7 +129,6 @@ createStars();
 // --- Sun Logic ---
 function updateSun() {
     const now = new Date();
-    // Simplified Sun Position Logic synced to UTC
     const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 1000 * 60 * 60 * 24);
     const declination = 23.44 * Math.sin((360/365) * (dayOfYear - 81) * (Math.PI/180));
     const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60;
@@ -105,13 +136,6 @@ function updateSun() {
     const sunLat = declination * (Math.PI / 180);
 
     const r = 50;
-    // Adjusting coordinate system to match texture (Greenwich at +Z or -Z?)
-    // Standard ThreeJS texture: Greenwich is usually at U=0.5.
-    // In SphereGeometry, U goes 0->1 around Y axis.
-    // 0 is usually +Z? No, typically +X or -Z.
-    // We will assume standard equirectangular.
-    // Let's assume +Z is Prime Meridian.
-
     const x = r * Math.cos(sunLat) * Math.sin(sunLong);
     const y = r * Math.sin(sunLat);
     const z = r * Math.cos(sunLat) * Math.cos(sunLong);
@@ -134,9 +158,6 @@ function startSequence() {
         y: 0,
         duration: 5,
         ease: "power2.out",
-        onUpdate: () => {
-             // Optional: Add some camera shake or slight rotation
-        }
     });
 
     // Phase 2: Orbit (5-10s)
@@ -146,7 +167,6 @@ function startSequence() {
         duration: 5,
         ease: "sine.inOut",
         onStart: () => {
-             // Start fetching location now so it's ready
              getIPLocation().then(loc => {
                  state.userLocation = loc;
                  console.log("Location found:", loc);
@@ -160,15 +180,7 @@ function startSequence() {
         duration: 3,
         onStart: () => {
             if (state.userLocation) {
-                const targetPos = latLonToVector3(state.userLocation.lat, state.userLocation.lon, state.earthRadius + 5); // +5 distance
-                // Need to rotate camera to look at earth center from that position
-                // Actually user said: "Zoom doucement... caméra en plongée au centre de l'écran"
-                // So we move camera to a position above the location.
-
-                // We need to animate camera position to `targetPos`
-                // And ensure camera looks at (0,0,0) or the surface point?
-                // "Plongée" means looking down. Looking at Earth center from surface normal is a perfect plunging view.
-
+                const targetPos = latLonToVector3(state.userLocation.lat, state.userLocation.lon, state.earthRadius + 5);
                 gsap.to(camera.position, {
                     x: targetPos.x,
                     y: targetPos.y,
@@ -186,14 +198,9 @@ function addMarker(loc) {
     const pos = latLonToVector3(loc.lat, loc.lon, state.earthRadius);
     const marker = createMarker();
     marker.position.copy(pos);
-    marker.lookAt(0, 0, 0); // Orient to center? No, orient away.
-    marker.lookAt(pos.clone().multiplyScalar(2)); // Look away from center
+    marker.lookAt(pos.clone().multiplyScalar(2));
     earthGroup.add(marker);
 }
-
-// Start
-document.getElementById('loading').style.opacity = 0;
-startSequence();
 
 
 function animate() {
