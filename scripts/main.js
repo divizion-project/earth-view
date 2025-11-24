@@ -75,7 +75,6 @@ let statusTimeout = null;
 const cameraTarget = new THREE.Vector3(0, 0, 0);
 const worldUp = new THREE.Vector3(0, 1, 0);
 const sunDirection = new THREE.Vector3();
-const sunPositionVector = new THREE.Vector3();
 const rotationModes = {
   search: { earth: EARTH_ROTATION_SPEED * 3.5, clouds: CLOUD_ROTATION_SPEED * 3 },
   focusing: { earth: EARTH_ROTATION_SPEED * 1.2, clouds: CLOUD_ROTATION_SPEED * 1.6 },
@@ -83,12 +82,12 @@ const rotationModes = {
   free: { earth: EARTH_ROTATION_SPEED, clouds: CLOUD_ROTATION_SPEED * 1.05 }
 };
 let rotationMode = 'search';
-const SUN_DISTANCE = 18;
-const JULIAN_UNIX_EPOCH = 2440587.5;
-const JULIAN_J2000 = 2451545.0;
-const SUN_UPDATE_INTERVAL_MS = 15000;
-const cachedSunDirection = new THREE.Vector3(1, 0, 0);
-let lastSunCalculation = 0;
+const sunOrbit = {
+  distance: 14,
+  speed: 0.006,
+  inclination: THREE.MathUtils.degToRad(23.4),
+  offset: Math.random() * Math.PI * 2
+};
 const composerResolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
 let composer = null;
 let bloomPass = null;
@@ -96,7 +95,6 @@ let cinematicPass = null;
 let earthMaterial = null;
 let atmosphereInner = null;
 let atmosphereOuter = null;
-let sunBillboard = null;
 
 const CINEMATIC_SHADER = {
   uniforms: {
@@ -236,10 +234,6 @@ let nightLightsMesh = null;
 let chunkManager = null;
 let chunkStreamingPromise = null;
 
-sunBillboard = createSunBillboard();
-scene.add(sunBillboard);
-updateSunPosition(true);
-
 const performanceMonitor = {
   fps: [],
   frameCount: 0,
@@ -284,92 +278,6 @@ function createStarParticles(count = 1500, radius = 130) {
   const points = new THREE.Points(geometry, material);
   points.renderOrder = -1;
   return points;
-}
-
-function createSunBillboardTexture(size = 512) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, size * 0.1, size / 2, size / 2, size / 2);
-  gradient.addColorStop(0, 'rgba(255, 250, 232, 1)');
-  gradient.addColorStop(0.35, 'rgba(255, 220, 150, 0.95)');
-  gradient.addColorStop(0.7, 'rgba(255, 170, 70, 0.4)');
-  gradient.addColorStop(1, 'rgba(255, 140, 50, 0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, size, size);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function createSunBillboard() {
-  const material = new THREE.SpriteMaterial({
-    map: createSunBillboardTexture(),
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.AdditiveBlending
-  });
-  material.toneMapped = false;
-  const sprite = new THREE.Sprite(material);
-  sprite.renderOrder = 5;
-  return sprite;
-}
-
-function normalizeAngle(degrees) {
-  return ((degrees % 360) + 360) % 360;
-}
-
-function toJulianDate(date = new Date()) {
-  return date.getTime() / 86400000 + JULIAN_UNIX_EPOCH;
-}
-
-function computeSubsolarPoint(date = new Date()) {
-  const jd = toJulianDate(date);
-  const T = (jd - JULIAN_J2000) / 36525;
-  const L0 = normalizeAngle(280.46646 + 36000.76983 * T + 0.0003032 * T * T);
-  const M = normalizeAngle(357.52911 + 35999.05029 * T - 0.0001537 * T * T);
-  const Mrad = THREE.MathUtils.degToRad(M);
-  const C =
-    (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.sin(Mrad) +
-    (0.019993 - 0.000101 * T) * Math.sin(2 * Mrad) +
-    0.000289 * Math.sin(3 * Mrad);
-  const trueLongitude = L0 + C;
-  const omega = 125.04 - 1934.136 * T;
-  const lambda = trueLongitude - 0.00569 - 0.00478 * Math.sin(THREE.MathUtils.degToRad(omega));
-  const epsilon0 = 23.439291 - 0.0130042 * T;
-  const epsilon = epsilon0 + 0.00256 * Math.cos(THREE.MathUtils.degToRad(omega));
-  const lambdaRad = THREE.MathUtils.degToRad(lambda);
-  const epsilonRad = THREE.MathUtils.degToRad(epsilon);
-  const declination = Math.asin(Math.sin(epsilonRad) * Math.sin(lambdaRad));
-  const y = Math.cos(epsilonRad) * Math.sin(lambdaRad);
-  const x = Math.cos(lambdaRad);
-  const rightAscension = Math.atan2(y, x);
-  const RAdeg = normalizeAngle(THREE.MathUtils.radToDeg(rightAscension));
-  const GMST = normalizeAngle(
-    280.46061837 +
-      360.98564736629 * (jd - JULIAN_J2000) +
-      0.000387933 * T * T -
-      (T * T * T) / 38710000
-  );
-  const gha = normalizeAngle(GMST - RAdeg);
-  let subLon = -gha;
-  if (subLon > 180) {
-    subLon -= 360;
-  } else if (subLon < -180) {
-    subLon += 360;
-  }
-  return {
-    latitude: THREE.MathUtils.radToDeg(declination),
-    longitude: subLon
-  };
-}
-
-function computeSunDirection(date = new Date()) {
-  const { latitude, longitude } = computeSubsolarPoint(date);
-  return latLonToVector3(latitude, longitude, 1).normalize();
 }
 
 function setupPostProcessing() {
@@ -1223,20 +1131,13 @@ function updateAtmosphereUniforms() {
   }
 }
 
-function updateSunPosition(force = false) {
-  const now = Date.now();
-  if (force || now - lastSunCalculation >= SUN_UPDATE_INTERVAL_MS) {
-    cachedSunDirection.copy(computeSunDirection(new Date(now)));
-    lastSunCalculation = now;
-  }
-  sunPositionVector.copy(cachedSunDirection).multiplyScalar(SUN_DISTANCE);
-  sun.position.copy(sunPositionVector);
+function updateSunPosition(elapsed = 0) {
+  const angle = elapsed * sunOrbit.speed + sunOrbit.offset;
+  const x = Math.cos(angle) * sunOrbit.distance;
+  const z = Math.sin(angle) * sunOrbit.distance;
+  const y = Math.sin(angle * 0.5) * Math.sin(sunOrbit.inclination) * sunOrbit.distance * 0.6;
+  sun.position.set(x, y, z);
   sun.lookAt(sunTarget.position);
-  if (sunBillboard) {
-    sunBillboard.position.copy(sunPositionVector);
-    const spriteScale = SUN_DISTANCE * 0.35;
-    sunBillboard.scale.set(spriteScale, spriteScale, spriteScale);
-  }
   updateSunUniform();
 }
 
@@ -1388,7 +1289,7 @@ function animate() {
     if (starParticles) {
       starParticles.rotation.y += delta * 0.02;
     }
-    updateSunPosition();
+    updateSunPosition(elapsed);
     updatePulses(now);
     chunkManager?.update(camera);
     updateCameraTransition();
