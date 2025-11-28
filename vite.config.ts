@@ -3,7 +3,7 @@ import cesium from 'vite-plugin-cesium';
 
 export default defineConfig({
   plugins: [cesium()],
-  base: './',
+  base: '/earth-view/',
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
