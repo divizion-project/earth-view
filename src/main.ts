@@ -1,4 +1,7 @@
 import * as Cesium from 'cesium';
+// @ts-ignore
+window.CESIUM_BASE_URL = import.meta.env.BASE_URL + 'cesium/';
+
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import './style.css';
 

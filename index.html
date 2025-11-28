@@ -6,7 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Divizion Earth View</title>
   </head>
+  <style>
+    body { background-color: #000; color: #fff; margin: 0; overflow: hidden; }
+    #loading-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: sans-serif; }
+  </style>
   <body>
+    <div id="loading-text">Loading Earth View...</div>
     <div id="app">
       <div id="cesiumContainer"></div>
       <div id="warp-overlay">
