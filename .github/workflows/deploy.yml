@@ -29,9 +29,9 @@ jobs:
 
       - name: Fix Cesium paths
         run: |
-          if [ -d "dist/divizion-launcher-earth-view/cesium" ]; then
-            mv dist/divizion-launcher-earth-view/cesium dist/cesium
-            rm -rf dist/divizion-launcher-earth-view
+          if [ -d "dist/earth-view/cesium" ]; then
+            mv dist/earth-view/cesium dist/cesium
+            rm -rf dist/earth-view
           fi
 
       - name: Upload artifact
