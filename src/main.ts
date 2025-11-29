@@ -283,8 +283,10 @@ startSequence();
 
 window.addEventListener('hashchange', () => {
   const hash = window.location.hash;
-  if (hash === '#settings') {
-    animateToSettings();
+  if (hash === '#settings' || hash === '#settingsleft') {
+    animateToSettings('left');
+  } else if (hash === '#settingsright') {
+    animateToSettings('right');
   } else if (hash === '#play') {
     animateToPlay();
   } else if (hash === '#base') {
@@ -325,7 +327,7 @@ function animateToBase() {
   });
 }
 
-function animateToSettings() {
+function animateToSettings(side: 'left' | 'right' = 'left') {
   // Ensure overlay is hidden
   if (warpOverlay) {
     warpOverlay.style.opacity = '0';
@@ -333,22 +335,30 @@ function animateToSettings() {
   }
 
   // Fly to high altitude
-  // To put Earth on the Left:
-  // 1. Look East (Heading 90)
-  // 2. Look somewhat Down (Pitch -60). Nadir is "Below" view.
-  // 3. Roll -90 deg (CW). "Below" becomes "Left".
-  const currentPos = viewer.camera.positionCartographic;
+  // To put Earth on the Left: Roll -90
+  // To put Earth on the Right: Roll +90
+
+  // Center on User Location
+  const targetLoc = userLocation || { lat: 48.8566, lon: 2.3522 };
+  // Calculate offset to center the target at 12,000km height and -60 pitch
+  // tan(30deg) * 12000km = ~6928km -> ~62 degrees Latitude offset
+  const CAMERA_OFFSET_SOUTH = 62.0;
+
+  const targetLat = targetLoc.lat - CAMERA_OFFSET_SOUTH;
+  const targetLon = targetLoc.lon;
+
+  const roll = side === 'left' ? -90 : 90;
 
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromRadians(
-      currentPos.longitude,
-      currentPos.latitude,
-      12000000 // 12,000 km viewing distance (Zoomed in)
+    destination: Cesium.Cartesian3.fromDegrees(
+      targetLon,
+      targetLat,
+      12000000 // 12,000 km viewing distance
     ),
     orientation: {
-      heading: Cesium.Math.toRadians(90),
+      heading: 0.0, // Look North (towards target)
       pitch: Cesium.Math.toRadians(-60),
-      roll: Cesium.Math.toRadians(-90)
+      roll: Cesium.Math.toRadians(roll)
     },
     duration: 2.0,
     easingFunction: Cesium.EasingFunction.QUINTIC_IN_OUT
